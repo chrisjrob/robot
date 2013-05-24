@@ -5,6 +5,7 @@
 # Simple script to test local bot
 
 use strict;
+use Data::Dumper;
 
 my $maps = load_maps();
 my $count = @$maps;
@@ -32,6 +33,9 @@ sub get_response {
 
     for (my $i=0;$i<$count;$i++) {
         # print "Attempt $i for $$maps[$i]{REGEX} and $$maps[$i]{RESPONSE}\n";
+
+        # print Dumper($maps);
+
         if ( (defined $$maps[$i]{LASTUSED}) and ((time - $$maps[$i]{LASTUSED}) < 30 ) ) {
             next;
         } elsif ($input =~ s/^$$maps[$i]{REGEX}/qq["$$maps[$i]{RESPONSE}"]/eegi) {
@@ -40,6 +44,7 @@ sub get_response {
             return ($maps, $$maps[$i]{TYPE}, $input);
         }
     }
+    return $maps;
 }
 
 sub load_maps {
