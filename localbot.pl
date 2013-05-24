@@ -7,10 +7,12 @@
 use strict;
 use Data::Dumper;
 
-my $maps = load_maps();
-my $count = @$maps;
-my $bot = 'robot_';
-my $nick = 'visitor';
+my $maps        = load_maps();
+my $count       = @$maps;
+my $bot         = 'robot_';
+my $nick        = 'visitor';
+my $lastsay     = 0;
+
 my ($type, $response);
 
 print "Ctrl+C to quit\n";
@@ -19,9 +21,13 @@ print "Ctrl+C to quit\n";
     my $input = <STDIN>;
     ($maps, $type, $response) = get_response($input);
     if ($type eq 'ACTION') {
+        $lastsay = time;
         print " * $bot $response\n";
     } elsif ($type eq 'SAY') {
+        $lastsay = time;
         print "$bot : $response\n";
+    } elsif ( (time - $lastsay) > 60 ) {
+        ($maps, $type, $response) = get_response();
     }
 
     redo;
@@ -30,18 +36,23 @@ print "Ctrl+C to quit\n";
 sub get_response {
     my $input = shift;
     chomp($input);
-
+    
     for (my $i=0;$i<$count;$i++) {
-        # print "Attempt $i for $$maps[$i]{REGEX} and $$maps[$i]{RESPONSE}\n";
+        if ( ! defined $input ) {
+            # Make a random selection
+            # but only of sayings that would be appropriate for random selection
 
-        # print Dumper($maps);
-
-        if ( (defined $$maps[$i]{LASTUSED}) and ((time - $$maps[$i]{LASTUSED}) < 30 ) ) {
+        } elsif ( (defined $$maps[$i]{LASTUSED}) and ((time - $$maps[$i]{LASTUSED}) < 30 ) ) {
             next;
+
         } elsif ($input =~ s/^$$maps[$i]{REGEX}/qq["$$maps[$i]{RESPONSE}"]/eegi) {
+
+            print Dumper($maps);
             $$maps[$i]{LASTUSED} = time;
             print "LASTUSED = $$maps[$i]{LASTUSED}\n";
+
             return ($maps, $$maps[$i]{TYPE}, $input);
+
         }
     }
     return $maps;
