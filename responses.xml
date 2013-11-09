@@ -1,0 +1,14 @@
+<responses>
+    <entry>
+        <desc>God I hate java, it's crap</desc>
+        <regex>.*\bhates?\s+(java|ruby)\b.*</regex>
+        <type>ACTION</type>
+        <response>considers $1 to be the work of the devil</response>
+    </entry>
+    <entry>
+        <desc>java--</desc>
+        <regex>.*(java|ruby)\b.*</regex>
+        <type>ACTION</type>
+        <response>considers $1 to be the work of the devil</response>
+    </entry>
+</responses>
