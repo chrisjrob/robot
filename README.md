@@ -11,8 +11,9 @@ This project is in its initial stages, no usable code as yet.
 
 Files
 -----
-* eliza.pl : example chatbot
-* localbot.pl : test script to run locally
-* responses : the regex file
 * robot.pl : the robot script
-
+* tester.pl : test script to run locally
+* responses.xml : the regex file
+* examples : example text
+* eliza.pl : example chatbot
+* README.md : this file
