@@ -10,7 +10,8 @@ use POE;
 use POE::Component::IRC;
 sub CHANNEL () { "#yourchannel" }
 my $RESPONSES = load_responses('responses.xml');
-use vars qw($RESPONSES);
+my $NICK;
+use vars qw($RESPONSES $NICK);
 
 # Create the component that will represent an IRC network.
 my ($irc) = POE::Component::IRC->spawn();
@@ -30,10 +31,10 @@ POE::Session->create(
 # IRC component.  Select a nickname.  Connect to a server.
 sub bot_start {
   $irc->yield(register => "all");
-  my $nick = 'robot_' . $$ % 1000;
+  $NICK = 'robot_' . $$ % 1000;
   $irc->yield(
     connect => {
-      Nick     => $nick,
+      Nick     => $NICK,
       Username => 'robot_',
       Ircname  => 'robot_',
       Server   => 'irc.freenode.net',
@@ -57,7 +58,7 @@ sub on_public {
   print " [$ts] <$nick:$channel> $msg\n";
   my $response = get_response($msg);
   if ($response) {
-    $irc->yield(ctcp => CHANNEL, "ACTION $response");
+    $irc->yield(ctcp => CHANNEL, $response);
   }
 }
 
@@ -71,7 +72,7 @@ sub on_action {
   print " [$ts] <$nick:$channel> $msg\n";
   my $response = get_response($msg);
   if ($response) {
-    $irc->yield(ctcp => CHANNEL, "ACTION $response");
+    $irc->yield(ctcp => CHANNEL, $response);
   }
 }
 
@@ -86,19 +87,24 @@ sub load_responses {
 }
 
 sub get_response {
-    my ($msg) = @_;
+    my $msg = shift;
 
     foreach my $entry (@{$RESPONSES->{entry}}) {
         my $regex    = $entry->{regex}->[0];
+
+        # For some reason this isn't expanding automatically
+        $regex =~ s/\$NICK/$NICK/gi;
+
         my $response = $entry->{response}->[0];
         if ( $msg =~ /$regex/ ) {
             my $capture1 = $1;
             my $capture2 = $2;
             my $capture3 = $3;
-            $response =~ s/\$1/$capture1/g;
-            $response =~ s/\$2/$capture2/g;
-            $response =~ s/\$3/$capture3/g;
-            return $response;
+            $response    =~ s/\$1/$capture1/g;
+            $response    =~ s/\$2/$capture2/g;
+            $response    =~ s/\$3/$capture3/g;
+            my $type     = $entry->{type}->[0];
+            return "$type $response";
         }
     }
 
