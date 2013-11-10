@@ -11,4 +11,16 @@
         <type>ACTION</type>
         <response>considers $1 to be the work of the devil</response>
     </entry>
+    <entry>
+        <desc>abandons * to their fate</desc>
+        <regex>&lt;.(.+)&gt; $NICK</regex>
+        <type>ACTION</type>
+        <response>abandons $1 to their fate</response>
+    </entry>
+    <entry>
+        <desc>wonders what * did to be awarded such good karma</desc>
+        <regex>\b([\S]+)\+\+</regex>
+        <type>ACTION</type>
+        <response>wonders what $1 did to be awarded such good karma</response>
+    </entry>
 </responses>
