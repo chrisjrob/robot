@@ -2,141 +2,142 @@
 
 use strict;
 use warnings;
-use IRC::Utils qw(parse_user lc_irc);
+
 use POE;
-use POE::Component::IRC::State;
-use POE::Component::IRC::Plugin::AutoJoin;
+use POE::Component::IRC;
 use POE::Component::IRC::Plugin::BotCommand;
-use Storable;
 
-use constant {
-    USER_DATE     => 0,
-    USER_MSG      => 1,
-    DATA_FILE     => 'seen',
-    SAVE_INTERVAL => 20 * 60,    # save state every 20 mins
-};
+my %DATA;
+dbmopen(%DATA, 'database', 0644)
+    or die "Cannot create database: $!";
 
-my $seen = {};
-$seen = retrieve(DATA_FILE) if -s DATA_FILE;
+# Print DB to stdout
+printdb();
+
+my @channels = ( '#trident' );
+
+my $nick = 'robot_' . $$ % 1000;
+
+my $irc = POE::Component::IRC->spawn(
+    nick   => $nick,
+    server => 'irc.freenode.net',
+);
 
 POE::Session->create(
     package_states => [
-        main => [
-            qw(
+        main =>
+            [ qw(
               _start
-              irc_botcmd_seen
-              irc_ctcp_action
-              irc_join
-              irc_part
-              irc_public
-              irc_quit
-              save
-              )
-        ]
+              irc_001
+              irc_botcmd_slap
+              irc_botcmd_add )
+            ],
     ],
 );
 
 $poe_kernel->run();
 
+dbmclose(%DATA) or die "Cannot close database: $!";
+
+exit;
+
+###############################################################
+#                                                             #
+# Sub-routines                                                #
+#                                                             #
+###############################################################
+
 sub _start {
-    my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
-    my $irc = POE::Component::IRC::State->spawn(
-        Nick   => 'robot2',
-        Server => 'irc.freenode.net',
-    );
-    $heap->{irc} = $irc;
-
-    $irc->plugin_add(
-        'AutoJoin',
-        POE::Component::IRC::Plugin::AutoJoin->new(
-            Channels => [ '#trident' ]
-        )
-    );
-
     $irc->plugin_add(
         'BotCommand',
         POE::Component::IRC::Plugin::BotCommand->new(
-            Commands => { seen => 'Usage: seen <nick>' }
+            Commands => {
+                slap => 'Usage: slap <nick>',
+                add => 'Usage: add <name> <regex-substitution',
+            }
         )
     );
+    $irc->yield( register => qw(001 botcmd_slap botcmd_add) );
+    $irc->yield( connect  => {} );
+}
 
-    $irc->yield(
-        register => qw(ctcp_action join part public quit botcmd_seen) );
-    $irc->yield('connect');
-    $kernel->delay_set( 'save', SAVE_INTERVAL );
+# join some channels
+sub irc_001 {
+    $irc->yield( join => $_ ) for @channels;
     return;
 }
 
-sub save {
-    my $kernel = $_[KERNEL];
-    warn "storing\n";
-    store( $seen, DATA_FILE ) or die "Can't save state";
-    $kernel->delay_set( 'save', SAVE_INTERVAL );
+# the good old slap
+sub irc_botcmd_slap {
+    my $nick = ( split /!/, $_[ARG0] )[0];
+    my ( $where, $arg ) = @_[ ARG1, ARG2 ];
+    $irc->yield( ctcp => $where, "ACTION slaps $arg" );
+    return;
 }
 
-sub irc_ctcp_action {
-    my $nick = parse_user( $_[ARG0] );
-    my $chan = $_[ARG1]->[0];
-    my $text = $_[ARG2];
+sub irc_botcmd_add {
+    my $nick = ( split /!/, $_[ARG0] )[0];
+    my ( $where, $input) = @_[ ARG1, ARG2 ];
 
-    add_nick( $nick, "on $chan doing: * $nick $text" );
-}
+    my ($name, $regex) = split(/\s+/, $input);
 
-sub irc_join {
-    my $nick = parse_user( $_[ARG0] );
-    my $chan = $_[ARG1];
-
-    add_nick( $nick, "joining $chan" );
-}
-
-sub irc_part {
-    my $nick = parse_user( $_[ARG0] );
-    my $chan = $_[ARG1];
-    my $text = $_[ARG2];
-
-    my $msg = 'parting $chan';
-    $msg .= " with message '$text'" if defined $text;
-
-    add_nick( $nick, $msg );
-}
-
-sub irc_public {
-    my $nick = parse_user( $_[ARG0] );
-    my $chan = $_[ARG1]->[0];
-    my $text = $_[ARG2];
-
-    add_nick( $nick, "on $chan saying: $text" );
-}
-
-sub irc_quit {
-    my $nick = parse_user( $_[ARG0] );
-    my $text = $_[ARG1];
-
-    my $msg = 'quitting';
-    $msg .= " with message '$text'" if defined $text;
-
-    add_nick( $nick, $msg );
-}
-
-sub add_nick {
-    my ( $nick, $msg ) = @_;
-    $seen->{ lc_irc($nick) } = [ time, $msg ];
-}
-
-sub irc_botcmd_seen {
-    my ( $heap, $nick, $channel, $target ) = @_[ HEAP, ARG0 .. $#_ ];
-    $nick = parse_user($nick);
-    my $irc = $heap->{irc};
-
-    if ( $seen->{ lc_irc($target) } ) {
-        my $date = localtime $seen->{ lc_irc($target) }->[USER_DATE];
-        my $msg  = $seen->{ lc_irc($target) }->[USER_MSG];
+    if ( (! defined $name) or (! defined $regex) ) {
         $irc->yield(
-            privmsg => $channel,
-            "$nick: I last saw $target at $date $msg"
+            'privmsg' => $where,
+            'Usage: add <name> <regex-substitution>'
         );
+        return;
     }
-    else {
-        $irc->yield( privmsg => $channel, "$nick: I haven't seen $target" );
+
+    # Some error checking here and untaint
+
+    $DATA{$name} = $regex;
+
+
+    $irc->yield( ctcp => $where, "ACTION adds $name to database" );
+    return;
+}
+
+sub printdb {
+    foreach my $name (keys %DATA) {
+        print "$name is ", $DATA{$name}, "\n";
     }
 }
+
+# # non-blocking dns lookup
+# sub irc_botcmd_lookup {
+#     my $nick = ( split /!/, $_[ARG0] )[0];
+#     my ( $where, $arg ) = @_[ ARG1, ARG2 ];
+#     my ( $type, $host ) = $arg =~ /^(?:(\w+) )?(\S+)/;
+# 
+#     my $res = $dns->resolve(
+#         event   => 'dns_response',
+#         host    => $host,
+#         type    => $type,
+#         context => {
+#             where => $where,
+#             nick  => $nick,
+#         },
+#     );
+#     $poe_kernel->yield( dns_response => $res ) if $res;
+#     return;
+# }
+# 
+# sub dns_response {
+#     my $res = $_[ARG0];
+#     my @answers = map { $_->rdatastr } $res->{response}->answer()
+#       if $res->{response};
+# 
+#     $irc->yield(
+#         'notice',
+#         $res->{context}->{where},
+#         $res->{context}->{nick}
+#           . (
+#             @answers
+#             ? ": @answers"
+#             : ': no answers for "' . $res->{host} . '"'
+#           )
+#     );
+# 
+#     return;
+# }
